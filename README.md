@@ -7,16 +7,53 @@ Daily aggregator for Tech, Media, and Telecom news from top sources.
 - **Techmeme** - Tech news aggregator
 - **TrendForce** - Tech industry research and news
 - **TechCrunch** - Startup and technology news
+- **DigiTimes** - Asia tech industry news
 
-## Installation
+## Automated Daily Email (GitHub Actions)
+
+The easiest way to use this scraper - no local setup required!
+
+### Setup Steps
+
+1. **Fork or clone this repo** to your GitHub account
+
+2. **Add email secrets** in your repo settings:
+   - Go to: Settings → Secrets and variables → Actions
+   - Add these two secrets:
+     - `EMAIL_USERNAME`: Your iCloud email (e.g., `yourname@me.com`)
+     - `EMAIL_PASSWORD`: An **App-Specific Password** (not your regular password)
+
+3. **Generate an App-Specific Password** (for iCloud):
+   - Go to https://appleid.apple.com/account/manage
+   - Sign in → Security → App-Specific Passwords → Generate
+   - Name it "TMT News" and copy the password
+   - Use this as your `EMAIL_PASSWORD` secret
+
+4. **Enable the workflow**:
+   - Go to: Actions tab → "Daily TMT News Digest" → Enable workflow
+
+5. **Test it**: Click "Run workflow" to test immediately
+
+The digest will be emailed to you every day at 7:00 AM EST.
+
+---
+
+## Local Installation (Alternative)
 
 ```bash
+# Clone the repo
+git clone https://github.com/amysutter69-droid/tmt-news.git
+cd tmt-news
+
 # Create virtual environment
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Run it
+python main.py
 ```
 
 ## Usage
