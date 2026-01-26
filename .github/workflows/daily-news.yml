@@ -37,11 +37,11 @@ jobs:
       - name: Send email
         uses: dawidd6/action-send-mail@v3
         with:
-          server_address: smtp.mail.me.com
+          server_address: smtp.gmail.com
           server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "TMT News Digest - ${{ github.event.repository.updated_at || 'Daily' }}"
-          to: amysutter@me.com
-          from: ${{ secrets.EMAIL_USERNAME }}
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "TMT News Digest"
+          to: ${{ secrets.GMAIL_USERNAME }}
+          from: ${{ secrets.GMAIL_USERNAME }}
           body: file://${{ steps.get-file.outputs.file }}
