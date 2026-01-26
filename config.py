@@ -16,6 +16,11 @@ NEWS_SOURCES = {
         "url": "https://techcrunch.com/",
         "name": "TechCrunch",
         "description": "Startup and technology news"
+    },
+    "digitimes": {
+        "url": "https://www.digitimes.com/tech/",
+        "name": "DigiTimes",
+        "description": "Asia tech industry news"
     }
 }
 

@@ -6,6 +6,7 @@ Scrapes top stories from:
 - Techmeme
 - TrendForce
 - TechCrunch
+- DigiTimes
 """
 
 import json
@@ -14,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 import config
-from scrapers import TechmemeScraper, TrendforceScraper, TechcrunchScraper
+from scrapers import TechmemeScraper, TrendforceScraper, TechcrunchScraper, DigitimesScraper
 
 
 def get_all_scrapers():
@@ -23,6 +24,7 @@ def get_all_scrapers():
         TechmemeScraper(),
         TrendforceScraper(),
         TechcrunchScraper(),
+        DigitimesScraper(),
     ]
 
 
@@ -95,26 +97,55 @@ def save_to_markdown(stories: dict, output_dir: str = None) -> str:
             title = story.get("title", "Untitled")
             url = story.get("url", "#")
             summary = story.get("summary", "")
-            author = story.get("author", "")
-            pub_date = story.get("published_date", "")
 
-            lines.append(f"### {i}. [{title}]({url})")
-
-            meta_parts = []
-            if author:
-                meta_parts.append(f"*By {author}*")
-            if pub_date:
-                meta_parts.append(f"*{pub_date[:10]}*")
-            if meta_parts:
-                lines.append(" | ".join(meta_parts))
-
+            # Email-friendly format: title on one line, URL on next line for easy copy/paste
+            lines.append(f"**{i}. {title}**")
+            lines.append(f"{url}")
             if summary:
-                lines.append("")
                 lines.append(f"> {summary}")
-
             lines.append("")
 
         lines.append("---")
+        lines.append("")
+
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    return str(filename)
+
+
+def save_to_email_text(stories: dict, output_dir: str = None) -> str:
+    """Save stories to a plain text file optimized for email copy/paste."""
+    output_path = Path(output_dir or config.OUTPUT_DIR)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    date_display = datetime.now().strftime("%B %d, %Y")
+    filename = output_path / f"news_{timestamp}_email.txt"
+
+    lines = [
+        f"TMT NEWS DIGEST - {date_display}",
+        "=" * 50,
+        "",
+    ]
+
+    for source_name, source_stories in stories.items():
+        lines.append(f"{source_name.upper()}")
+        lines.append("-" * 30)
+
+        if not source_stories:
+            lines.append("No stories found")
+            lines.append("")
+            continue
+
+        for i, story in enumerate(source_stories, 1):
+            title = story.get("title", "Untitled")
+            url = story.get("url", "")
+
+            lines.append(f"{i}. {title}")
+            lines.append(f"   {url}")
+            lines.append("")
+
         lines.append("")
 
     with open(filename, "w", encoding="utf-8") as f:
@@ -157,7 +188,7 @@ def run(output_format: str = "both", max_per_source: int = None):
     Main entry point for the scraper.
 
     Args:
-        output_format: 'json', 'markdown', or 'both'
+        output_format: 'json', 'markdown', 'email', or 'all'
         max_per_source: Maximum stories per source (defaults to config value)
     """
     print(f"\nTMT News Scraper starting at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -169,15 +200,26 @@ def run(output_format: str = "both", max_per_source: int = None):
     # Save outputs
     saved_files = []
 
-    if output_format in ("json", "both"):
+    if output_format in ("json", "both", "all"):
         json_file = save_to_json(stories)
         saved_files.append(json_file)
         print(f"\nSaved JSON: {json_file}")
 
-    if output_format in ("markdown", "both"):
+    if output_format in ("markdown", "both", "all"):
         md_file = save_to_markdown(stories)
         saved_files.append(md_file)
         print(f"Saved Markdown: {md_file}")
+
+    if output_format in ("email", "all"):
+        email_file = save_to_email_text(stories)
+        saved_files.append(email_file)
+        print(f"Saved Email text: {email_file}")
+
+    # Always save email-friendly version by default
+    if output_format == "both":
+        email_file = save_to_email_text(stories)
+        saved_files.append(email_file)
+        print(f"Saved Email text: {email_file}")
 
     # Print summary
     print_summary(stories)
@@ -191,9 +233,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="TMT News Scraper")
     parser.add_argument(
         "--format", "-f",
-        choices=["json", "markdown", "both"],
+        choices=["json", "markdown", "email", "both", "all"],
         default="both",
-        help="Output format (default: both)"
+        help="Output format: json, markdown, email, both (json+md+email), or all"
     )
     parser.add_argument(
         "--max", "-m",
