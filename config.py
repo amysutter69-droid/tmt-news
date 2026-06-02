@@ -55,7 +55,7 @@ PODCASTS = [
     {
         "name": "Cheeky Pint",
         # Verify this RSS URL is correct for your version of the show
-        "rss_url": "https://feeds.buzzsprout.com/1985510.rss",
+        "rss_url": "https://feeds.transistor.fm/cheeky-pint-with-john-collison",
     },
 ]
 
