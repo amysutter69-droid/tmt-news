@@ -34,3 +34,29 @@ MAX_STORIES_PER_SOURCE = 10
 
 # Schedule settings (24-hour format)
 DAILY_RUN_TIME = "07:00"
+
+# ── Podcast RSS feeds ─────────────────────────────────────────────────────────
+# Add or remove podcasts here. The digest looks back PODCAST_LOOKBACK_DAYS days.
+# To find an RSS URL: open the podcast in a browser, or search "<name> RSS feed".
+PODCASTS = [
+    {
+        "name": "All-In Podcast",
+        "rss_url": "https://feeds.megaphone.fm/all-in-with-chamath-jason-sacks-friedberg",
+    },
+    {
+        "name": "Invest Like the Best",
+        "rss_url": "https://feeds.megaphone.fm/investlikethebest",
+    },
+    {
+        "name": "Dwarkesh Podcast",
+        # Dwarkesh Patel's long-form interview podcast
+        "rss_url": "https://www.dwarkeshpatel.com/feed",
+    },
+    {
+        "name": "Cheeky Pint",
+        # Verify this RSS URL is correct for your version of the show
+        "rss_url": "https://feeds.buzzsprout.com/1985510.rss",
+    },
+]
+
+PODCAST_LOOKBACK_DAYS = 7
