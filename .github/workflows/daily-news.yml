@@ -26,6 +26,8 @@ jobs:
 
       - name: Run news scraper
         run: python main.py --format email --max 10
+        env:
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
 
       - name: Get output filename
         id: get-file
@@ -41,7 +43,7 @@ jobs:
           server_port: 587
           username: ${{ secrets.GMAIL_USERNAME }}
           password: ${{ secrets.GMAIL_APP_PASSWORD }}
-          subject: "TMT News Digest"
+          subject: "Semiconductor & Hardware Daily"
           to: ${{ secrets.GMAIL_USERNAME }}
           from: ${{ secrets.GMAIL_USERNAME }}
           body: file://${{ steps.get-file.outputs.file }}

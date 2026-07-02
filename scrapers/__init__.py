@@ -5,6 +5,8 @@ from .techmeme import TechmemeScraper
 from .trendforce import TrendforceScraper
 from .techcrunch import TechcrunchScraper
 from .digitimes import DigitimesScraper
+from .rss import RSSScraper
+from .x_search import XScraper
 
 __all__ = [
     "BaseScraper",
@@ -12,4 +14,6 @@ __all__ = [
     "TrendforceScraper",
     "TechcrunchScraper",
     "DigitimesScraper",
+    "RSSScraper",
+    "XScraper",
 ]

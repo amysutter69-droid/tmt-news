@@ -1,39 +1,45 @@
 #!/usr/bin/env python3
 """
-TMT News Scraper - Daily tech, media, and telecom news aggregator.
+Semiconductor & Hardware News Scraper - daily digest for investor emails.
 
-Scrapes top stories from:
-- Techmeme
-- TrendForce
-- TechCrunch
-- DigiTimes
+Pulls stories from tech news sites (HTML + RSS) and X.com, scores each
+story for semiconductor/hardware relevance, and produces a ranked digest.
 """
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 
 import config
-from scrapers import TechmemeScraper, TrendforceScraper, TechcrunchScraper, DigitimesScraper
+import relevance
+from scrapers import (
+    TechmemeScraper, TrendforceScraper, TechcrunchScraper, DigitimesScraper,
+    RSSScraper, XScraper,
+)
+
+X_SOURCE_NAME = config.NEWS_SOURCES["x"]["name"]
 
 
 def get_all_scrapers():
     """Return instances of all available scrapers."""
-    return [
+    scrapers = [
         TechmemeScraper(),
         TrendforceScraper(),
         TechcrunchScraper(),
         DigitimesScraper(),
     ]
+    scrapers.extend(RSSScraper(key) for key in config.RSS_SOURCES)
+    scrapers.append(XScraper())
+    return scrapers
 
 
-def scrape_all_sources(max_per_source: int = None) -> dict:
+def scrape_all_sources() -> dict:
     """
-    Scrape news from all configured sources.
+    Scrape news from all configured sources and score each story.
 
     Returns:
-        Dictionary with source names as keys and lists of stories as values.
+        Dictionary with source names as keys and lists of story dicts
+        (including relevance_score) as values.
     """
     all_stories = {}
     scrapers = get_all_scrapers()
@@ -41,9 +47,10 @@ def scrape_all_sources(max_per_source: int = None) -> dict:
     for scraper in scrapers:
         print(f"Scraping {scraper.name}...")
         try:
-            stories = scraper.get_stories(max_per_source)
-            all_stories[scraper.name] = [s.to_dict() for s in stories]
-            print(f"  Found {len(stories)} stories from {scraper.name}")
+            stories = scraper.get_stories(config.RAW_STORIES_PER_SOURCE)
+            scored = [relevance.score_story(s.to_dict()) for s in stories]
+            all_stories[scraper.name] = scored
+            print(f"  Found {len(scored)} stories from {scraper.name}")
         except Exception as e:
             print(f"  Error scraping {scraper.name}: {e}")
             all_stories[scraper.name] = []
@@ -51,8 +58,44 @@ def scrape_all_sources(max_per_source: int = None) -> dict:
     return all_stories
 
 
-def save_to_json(stories: dict, output_dir: str = None) -> str:
-    """Save stories to a JSON file."""
+def build_digest(all_stories: dict, filtered: bool = True, max_per_source: int = None) -> dict:
+    """
+    Turn raw scraped stories into a structured digest.
+
+    Returns a dict with:
+        top_stories: ranked, deduped semiconductor/hardware stories (web sources)
+        x_posts: ranked posts from X
+        by_source: relevant stories per source, trimmed for display
+    """
+    per_source_limit = max_per_source or config.MAX_STORIES_PER_SOURCE
+
+    web_stories = []
+    x_posts = []
+    by_source = {}
+
+    for source_name, stories in all_stories.items():
+        if filtered:
+            stories = [s for s in stories if relevance.is_relevant(s)]
+        ranked = relevance.rank_stories(stories)
+
+        if source_name == X_SOURCE_NAME:
+            x_posts = ranked[:config.X_POSTS_COUNT]
+        else:
+            by_source[source_name] = ranked[:per_source_limit]
+            web_stories.extend(ranked)
+
+    top_stories = relevance.dedupe_stories(relevance.rank_stories(web_stories))
+    top_stories = top_stories[:config.TOP_STORIES_COUNT]
+
+    return {
+        "top_stories": top_stories,
+        "x_posts": x_posts,
+        "by_source": by_source,
+    }
+
+
+def save_to_json(all_stories: dict, output_dir: str = None) -> str:
+    """Save all scraped stories (with scores) to a JSON file."""
     output_path = Path(output_dir or config.OUTPUT_DIR)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -62,14 +105,14 @@ def save_to_json(stories: dict, output_dir: str = None) -> str:
     with open(filename, "w", encoding="utf-8") as f:
         json.dump({
             "scraped_at": datetime.now().isoformat(),
-            "sources": stories
+            "sources": all_stories
         }, f, indent=2, ensure_ascii=False)
 
     return str(filename)
 
 
-def save_to_markdown(stories: dict, output_dir: str = None) -> str:
-    """Save stories to a readable Markdown file."""
+def save_to_markdown(digest: dict, output_dir: str = None) -> str:
+    """Save the digest to a readable Markdown file."""
     output_path = Path(output_dir or config.OUTPUT_DIR)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -78,35 +121,50 @@ def save_to_markdown(stories: dict, output_dir: str = None) -> str:
     filename = output_path / f"news_{timestamp}.md"
 
     lines = [
-        f"# TMT News Digest - {date_display}",
+        f"# Semiconductor & Hardware Daily - {date_display}",
         "",
         f"*Generated at {datetime.now().strftime('%H:%M:%S')}*",
         "",
+        "## Top Stories",
+        "",
     ]
 
-    for source_name, source_stories in stories.items():
-        lines.append(f"## {source_name}")
+    if not digest["top_stories"]:
+        lines.append("*No relevant stories found*")
+        lines.append("")
+    for i, story in enumerate(digest["top_stories"], 1):
+        lines.append(f"**{i}. {story['title']}** *({story['source']})*")
+        lines.append(f"{story['url']}")
+        if story.get("summary"):
+            lines.append(f"> {story['summary']}")
         lines.append("")
 
+    lines.append("## From X")
+    lines.append("")
+    if not digest["x_posts"]:
+        lines.append("*No X posts (source unavailable or no relevant posts)*")
+        lines.append("")
+    for i, post in enumerate(digest["x_posts"], 1):
+        lines.append(f"**{i}. {post.get('author', '')}**: {post['title']}")
+        lines.append(f"{post['url']}")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("")
+    lines.append("## By Source")
+    lines.append("")
+
+    for source_name, source_stories in digest["by_source"].items():
+        lines.append(f"### {source_name}")
+        lines.append("")
         if not source_stories:
-            lines.append("*No stories found*")
+            lines.append("*No relevant stories found*")
             lines.append("")
             continue
-
         for i, story in enumerate(source_stories, 1):
-            title = story.get("title", "Untitled")
-            url = story.get("url", "#")
-            summary = story.get("summary", "")
-
-            # Email-friendly format: title on one line, URL on next line for easy copy/paste
-            lines.append(f"**{i}. {title}**")
-            lines.append(f"{url}")
-            if summary:
-                lines.append(f"> {summary}")
+            lines.append(f"**{i}. {story['title']}**")
+            lines.append(f"{story['url']}")
             lines.append("")
-
-        lines.append("---")
-        lines.append("")
 
     with open(filename, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
@@ -114,8 +172,8 @@ def save_to_markdown(stories: dict, output_dir: str = None) -> str:
     return str(filename)
 
 
-def save_to_email_text(stories: dict, output_dir: str = None) -> str:
-    """Save stories to a plain text file optimized for email copy/paste."""
+def save_to_email_text(digest: dict, output_dir: str = None) -> str:
+    """Save the digest to a plain text file optimized for email."""
     output_path = Path(output_dir or config.OUTPUT_DIR)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -124,28 +182,47 @@ def save_to_email_text(stories: dict, output_dir: str = None) -> str:
     filename = output_path / f"news_{timestamp}_email.txt"
 
     lines = [
-        f"TMT NEWS DIGEST - {date_display}",
+        f"SEMICONDUCTOR & HARDWARE DAILY - {date_display}",
         "=" * 50,
+        "",
+        "TOP STORIES",
+        "-" * 30,
         "",
     ]
 
-    for source_name, source_stories in stories.items():
-        lines.append(f"{source_name.upper()}")
-        lines.append("-" * 30)
+    if not digest["top_stories"]:
+        lines.append("No relevant stories found")
+        lines.append("")
+    for i, story in enumerate(digest["top_stories"], 1):
+        lines.append(f"{i}. {story['title']} [{story['source']}]")
+        lines.append(f"   {story['url']}")
+        lines.append("")
 
+    lines.append("FROM X")
+    lines.append("-" * 30)
+    lines.append("")
+    if not digest["x_posts"]:
+        lines.append("No X posts (source unavailable or no relevant posts)")
+        lines.append("")
+    for i, post in enumerate(digest["x_posts"], 1):
+        lines.append(f"{i}. {post.get('author', '')}: {post['title']}")
+        lines.append(f"   {post['url']}")
+        lines.append("")
+
+    lines.append("")
+    lines.append("MORE BY SOURCE")
+    lines.append("=" * 50)
+    lines.append("")
+
+    for source_name, source_stories in digest["by_source"].items():
         if not source_stories:
-            lines.append("No stories found")
-            lines.append("")
             continue
-
+        lines.append(source_name.upper())
+        lines.append("-" * 30)
         for i, story in enumerate(source_stories, 1):
-            title = story.get("title", "Untitled")
-            url = story.get("url", "")
-
-            lines.append(f"{i}. {title}")
-            lines.append(f"   {url}")
+            lines.append(f"{i}. {story['title']}")
+            lines.append(f"   {story['url']}")
             lines.append("")
-
         lines.append("")
 
     with open(filename, "w", encoding="utf-8") as f:
@@ -154,95 +231,95 @@ def save_to_email_text(stories: dict, output_dir: str = None) -> str:
     return str(filename)
 
 
-def print_summary(stories: dict):
-    """Print a console summary of scraped stories."""
+def print_summary(digest: dict):
+    """Print a console summary of the digest."""
     print("\n" + "=" * 60)
-    print("TMT NEWS DIGEST")
+    print("SEMICONDUCTOR & HARDWARE DAILY")
     print(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
-    total_stories = 0
+    print(f"\n## Top Stories ({len(digest['top_stories'])})")
+    print("-" * 40)
+    for i, story in enumerate(digest["top_stories"][:10], 1):
+        title = story["title"]
+        if len(title) > 60:
+            title = title[:57] + "..."
+        print(f"  {i}. [{story['relevance_score']:>2}] {title} ({story['source']})")
 
-    for source_name, source_stories in stories.items():
-        print(f"\n## {source_name} ({len(source_stories)} stories)")
-        print("-" * 40)
+    print(f"\n## X Posts ({len(digest['x_posts'])})")
+    print("-" * 40)
+    for i, post in enumerate(digest["x_posts"][:5], 1):
+        title = post["title"]
+        if len(title) > 60:
+            title = title[:57] + "..."
+        print(f"  {i}. {post.get('author', '')}: {title}")
 
-        for i, story in enumerate(source_stories[:5], 1):  # Show top 5 in console
-            title = story.get("title", "Untitled")
-            if len(title) > 70:
-                title = title[:67] + "..."
-            print(f"  {i}. {title}")
+    print("\n## Relevant stories by source")
+    print("-" * 40)
+    for source_name, stories in digest["by_source"].items():
+        print(f"  {source_name}: {len(stories)}")
 
-        if len(source_stories) > 5:
-            print(f"  ... and {len(source_stories) - 5} more")
-
-        total_stories += len(source_stories)
-
-    print("\n" + "=" * 60)
-    print(f"Total: {total_stories} stories from {len(stories)} sources")
     print("=" * 60)
 
 
-def run(output_format: str = "both", max_per_source: int = None):
+def run(output_format: str = "both", max_per_source: int = None, filtered: bool = True):
     """
     Main entry point for the scraper.
 
     Args:
-        output_format: 'json', 'markdown', 'email', or 'all'
-        max_per_source: Maximum stories per source (defaults to config value)
+        output_format: 'json', 'markdown', 'email', 'both', or 'all'
+        max_per_source: Maximum stories per source in by-source sections
+        filtered: Apply semiconductor/hardware relevance filtering
     """
-    print(f"\nTMT News Scraper starting at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"\nNews scraper starting at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("-" * 60)
 
-    # Scrape all sources
-    stories = scrape_all_sources(max_per_source)
+    all_stories = scrape_all_sources()
+    digest = build_digest(all_stories, filtered=filtered, max_per_source=max_per_source)
 
-    # Save outputs
     saved_files = []
 
     if output_format in ("json", "both", "all"):
-        json_file = save_to_json(stories)
+        json_file = save_to_json(all_stories)
         saved_files.append(json_file)
         print(f"\nSaved JSON: {json_file}")
 
     if output_format in ("markdown", "both", "all"):
-        md_file = save_to_markdown(stories)
+        md_file = save_to_markdown(digest)
         saved_files.append(md_file)
         print(f"Saved Markdown: {md_file}")
 
-    if output_format in ("email", "all"):
-        email_file = save_to_email_text(stories)
+    if output_format in ("email", "both", "all"):
+        email_file = save_to_email_text(digest)
         saved_files.append(email_file)
         print(f"Saved Email text: {email_file}")
 
-    # Always save email-friendly version by default
-    if output_format == "both":
-        email_file = save_to_email_text(stories)
-        saved_files.append(email_file)
-        print(f"Saved Email text: {email_file}")
+    print_summary(digest)
 
-    # Print summary
-    print_summary(stories)
-
-    return stories, saved_files
+    return digest, saved_files
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="TMT News Scraper")
+    parser = argparse.ArgumentParser(description="Semiconductor & Hardware News Scraper")
     parser.add_argument(
         "--format", "-f",
         choices=["json", "markdown", "email", "both", "all"],
         default="both",
-        help="Output format: json, markdown, email, both (json+md+email), or all"
+        help="Output format: json, markdown, email, both (all three), or all"
     )
     parser.add_argument(
         "--max", "-m",
         type=int,
         default=None,
-        help=f"Max stories per source (default: {config.MAX_STORIES_PER_SOURCE})"
+        help=f"Max stories per source in by-source sections (default: {config.MAX_STORIES_PER_SOURCE})"
+    )
+    parser.add_argument(
+        "--no-filter",
+        action="store_true",
+        help="Skip semiconductor/hardware relevance filtering (include all stories)"
     )
 
     args = parser.parse_args()
-    run(output_format=args.format, max_per_source=args.max)
+    run(output_format=args.format, max_per_source=args.max, filtered=not args.no_filter)
