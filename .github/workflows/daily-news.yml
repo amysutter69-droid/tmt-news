@@ -2,8 +2,10 @@ name: Daily TMT News Digest
 
 on:
   schedule:
-    # Runs at 7:00 AM EST (12:00 UTC) every day
-    - cron: '0 12 * * *'
+    # Target: inbox by 7:00 AM ET. GitHub cron is UTC and runs are often
+    # delayed 1-2h at busy times, so fire at 09:40 UTC (5:40 AM EDT /
+    # 4:40 AM EST) at an off-peak minute to leave plenty of buffer.
+    - cron: '40 9 * * *'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
